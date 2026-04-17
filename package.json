@@ -1,0 +1,16 @@
+{
+  "name": "soccercast",
+  "version": "1.0.0",
+  "description": "Multiplayer football game playable on Chromecast via phone controllers",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.5.0",
+    "socket.io": "^4.7.5"
+  }
+}

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SoccerCast — Receiver</title>
+  <!--
+    Chromecast Custom Receiver App
+    ================================
+    To use as a real Chromecast receiver:
+      1. Register your app at https://cast.google.com/publish
+      2. Set the Receiver URL to the hosted /receiver path
+      3. Use the returned App ID in controller.html (CAST_APP_ID)
+
+    For local / LAN play the page works in any browser without Cast.
+  -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #111;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    canvas { display: block; }
+
+    /* Goal celebration overlay */
+    #goal-banner {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      background: rgba(0,0,0,.75);
+      color: #fff;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 52px;
+      font-weight: 900;
+      padding: 20px 50px;
+      border-radius: 20px;
+      text-align: center;
+      letter-spacing: 1px;
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+      pointer-events: none;
+      z-index: 10;
+    }
+    #goal-banner.show { transform: translate(-50%, -50%) scale(1); }
+
+    /* Waiting screen */
+    #waiting {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,.55);
+      color: #fff;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      z-index: 5;
+    }
+    #waiting h2 { font-size: 2.4rem; margin-bottom: 12px; }
+    #waiting p  { font-size: 1.1rem; color: #ccc; }
+    #waiting .url { margin-top: 14px; font-size: 1.3rem; font-weight: 700; color: #7cf; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="goal-banner">⚽ GOAL!</div>
+
+  <div id="waiting">
+    <h2>⚽ SoccerCast</h2>
+    <p>Waiting for players…</p>
+    <p class="url" id="ctrl-url"></p>
+    <p style="margin-top:8px;color:#aaa;font-size:.9rem">Open the URL above on your phone to join</p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // -----------------------------------------------------------------------
+    // Constants (must match server.js)
+    // -----------------------------------------------------------------------
+    const FIELD_W  = 800;
+    const FIELD_H  = 500;
+    const PLAYER_R = 16;
+    const BALL_R   = 12;
+    const GOAL_W   = 130;
+
+    const GOAL_TOP    = (FIELD_H - GOAL_W) / 2;
+    const GOAL_BOTTOM = (FIELD_H + GOAL_W) / 2;
+    const GOAL_DEPTH  = 32;
+
+    // -----------------------------------------------------------------------
+    // Canvas scaling
+    // -----------------------------------------------------------------------
+    const canvas = document.getElementById('c');
+    const ctx    = canvas.getContext('2d');
+
+    function resize() {
+      const scaleX = window.innerWidth  / FIELD_W;
+      const scaleY = window.innerHeight / FIELD_H;
+      const scale  = Math.min(scaleX, scaleY);
+      canvas.width  = FIELD_W;
+      canvas.height = FIELD_H;
+      canvas.style.width  = Math.round(FIELD_W * scale) + 'px';
+      canvas.style.height = Math.round(FIELD_H * scale) + 'px';
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Show controller URL
+    document.getElementById('ctrl-url').textContent =
+      window.location.origin + '/controller';
+
+    // -----------------------------------------------------------------------
+    // Socket.io
+    // -----------------------------------------------------------------------
+    const socket = io();
+    let lastState = null;
+
+    socket.on('gameState', state => {
+      lastState = state;
+      const waiting = document.getElementById('waiting');
+      waiting.style.display = state.phase === 'waiting' ? 'flex' : 'none';
+      render(state);
+    });
+
+    socket.on('goal', ({ scorer, score }) => {
+      const banner = document.getElementById('goal-banner');
+      const teamColor = scorer === 'red' ? '#ff5555' : '#5599ff';
+      banner.innerHTML =
+        `<span style="color:${teamColor}">${scorer.toUpperCase()} TEAM</span><br>` +
+        `<span style="font-size:32px">SCORES! &nbsp; 🎉</span><br>` +
+        `<span style="font-size:28px;font-weight:400">` +
+          `<span style="color:#ff5555">${score.red}</span>` +
+          ` &nbsp;–&nbsp; ` +
+          `<span style="color:#5599ff">${score.blue}</span>` +
+        `</span>`;
+      banner.classList.add('show');
+      setTimeout(() => banner.classList.remove('show'), 2700);
+    });
+
+    // -----------------------------------------------------------------------
+    // Rendering helpers
+    // -----------------------------------------------------------------------
+    function drawField() {
+      // Grass gradient
+      const grad = ctx.createLinearGradient(0, 0, FIELD_W, FIELD_H);
+      grad.addColorStop(0,   '#2e8b2e');
+      grad.addColorStop(0.5, '#34a034');
+      grad.addColorStop(1,   '#2e8b2e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, FIELD_W, FIELD_H);
+
+      // Alternating stripes (subtle)
+      ctx.fillStyle = 'rgba(0,0,0,.06)';
+      for (let x = 0; x < FIELD_W; x += 80) {
+        ctx.fillRect(x, 0, 40, FIELD_H);
+      }
+
+      // --- Field lines ---
+      ctx.strokeStyle = 'rgba(255,255,255,.8)';
+      ctx.lineWidth = 2;
+
+      // Outer border
+      ctx.strokeRect(10, 10, FIELD_W - 20, FIELD_H - 20);
+
+      // Halfway line
+      ctx.beginPath();
+      ctx.moveTo(FIELD_W / 2, 10);
+      ctx.lineTo(FIELD_W / 2, FIELD_H - 10);
+      ctx.stroke();
+
+      // Centre circle
+      ctx.beginPath();
+      ctx.arc(FIELD_W / 2, FIELD_H / 2, 60, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Centre spot
+      ctx.fillStyle = 'rgba(255,255,255,.8)';
+      ctx.beginPath();
+      ctx.arc(FIELD_W / 2, FIELD_H / 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Penalty boxes
+      ctx.strokeStyle = 'rgba(255,255,255,.5)';
+      const pbH = FIELD_H / 2 - 85;
+      ctx.strokeRect(10, pbH, 90, 170);
+      ctx.strokeRect(FIELD_W - 100, pbH, 90, 170);
+
+      // --- Goals ---
+      // Left goal (red defends) — colour-coded red
+      ctx.fillStyle   = 'rgba(200,50,50,.35)';
+      ctx.strokeStyle = '#cc3333';
+      ctx.lineWidth   = 3;
+      ctx.fillRect(0, GOAL_TOP, GOAL_DEPTH, GOAL_W);
+      ctx.strokeRect(0, GOAL_TOP, GOAL_DEPTH, GOAL_W);
+
+      // Right goal (blue defends) — colour-coded blue
+      ctx.fillStyle   = 'rgba(50,80,200,.35)';
+      ctx.strokeStyle = '#3355cc';
+      ctx.fillRect(FIELD_W - GOAL_DEPTH, GOAL_TOP, GOAL_DEPTH, GOAL_W);
+      ctx.strokeRect(FIELD_W - GOAL_DEPTH, GOAL_TOP, GOAL_DEPTH, GOAL_W);
+    }
+
+    function drawPlayers(players) {
+      for (const p of players) {
+        const { x, y, name, team } = p;
+
+        // Shadow
+        ctx.beginPath();
+        ctx.ellipse(x + 2, y + 4, PLAYER_R * 0.8, PLAYER_R * 0.4, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,0,0,.3)';
+        ctx.fill();
+
+        // Body
+        ctx.beginPath();
+        ctx.arc(x, y, PLAYER_R, 0, Math.PI * 2);
+        ctx.fillStyle = team === 'red' ? '#ee3333' : '#3355ee';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // Jersey number / initial
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(name.charAt(0).toUpperCase(), x, y);
+
+        // Name label
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = 'rgba(0,0,0,.6)';
+        ctx.shadowBlur  = 4;
+        ctx.fillText(name.slice(0, 10), x, y + PLAYER_R + 11);
+        ctx.shadowBlur = 0;
+      }
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function drawBall(ball) {
+      const { x, y } = ball;
+
+      // Shadow
+      ctx.beginPath();
+      ctx.ellipse(x + 3, y + 4, BALL_R * 0.9, BALL_R * 0.45, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,.3)';
+      ctx.fill();
+
+      // Ball body
+      ctx.beginPath();
+      ctx.arc(x, y, BALL_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Simple pentagon pattern
+      ctx.fillStyle = '#333';
+      drawPentagonPattern(x, y, BALL_R);
+    }
+
+    function drawPentagonPattern(cx, cy, r) {
+      // Draw simplified soccer ball patches
+      const patches = [
+        [0, 0],
+        [0, -r * 0.55],
+        [r * 0.52, -r * 0.17],
+        [r * 0.32,  r * 0.45],
+        [-r * 0.32,  r * 0.45],
+        [-r * 0.52, -r * 0.17],
+      ];
+      ctx.fillStyle = '#333';
+      for (const [dx, dy] of patches) {
+        ctx.beginPath();
+        ctx.arc(cx + dx, cy + dy, r * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawScoreboard(score, phase) {
+      const bw = 160, bh = 44, bx = FIELD_W / 2 - bw / 2, by = 14;
+      ctx.fillStyle = 'rgba(0,0,0,.65)';
+      roundRect(bx, by, bw, bh, 10);
+      ctx.fill();
+
+      ctx.font = 'bold 28px Arial';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ff5555';
+      ctx.fillText(score.red,  bx + bw / 2 - 16, by + bh / 2);
+
+      ctx.fillStyle = '#aaa';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 22px Arial';
+      ctx.fillText('–', FIELD_W / 2, by + bh / 2);
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 28px Arial';
+      ctx.fillStyle = '#5599ff';
+      ctx.fillText(score.blue, bx + bw / 2 + 16, by + bh / 2);
+
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function drawTeamLabels() {
+      ctx.font = 'bold 11px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,100,100,.75)';
+      ctx.fillText('RED', 55, FIELD_H - 18);
+      ctx.fillStyle = 'rgba(80,140,255,.75)';
+      ctx.fillText('BLUE', FIELD_W - 55, FIELD_H - 18);
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function render(state) {
+      ctx.clearRect(0, 0, FIELD_W, FIELD_H);
+      drawField();
+      drawTeamLabels();
+      if (state.players && state.players.length) drawPlayers(state.players);
+      if (state.ball) drawBall(state.ball);
+      if (state.score) drawScoreboard(state.score, state.phase);
+    }
+
+    // -----------------------------------------------------------------------
+    // Chromecast Custom Receiver SDK (optional — gracefully skipped if absent)
+    // -----------------------------------------------------------------------
+    window.__onGCastApiAvailable = function(isAvailable) {
+      if (!isAvailable) return;
+      try {
+        const ctx2 = cast.framework.CastReceiverContext.getInstance();
+        ctx2.start();
+        console.log('[Cast] Receiver context started');
+      } catch (e) {
+        console.warn('[Cast] Could not start receiver context', e);
+      }
+    };
+  </script>
+
+  <!--
+    Uncomment to enable the Cast Receiver SDK when hosting as a registered
+    Chromecast receiver app:
+
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  -->
+</body>
+</html>
