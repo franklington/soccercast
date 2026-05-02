@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1">
+  <title>SoccerCast — Controller</title>
+  <!--
+    Chromecast Sender SDK (optional)
+    ==================================
+    To let players cast the receiver from this page:
+      1. Replace CAST_APP_ID below with your registered Cast App ID
+      2. Uncomment the Cast sender SDK script at the bottom of the file
+
+    Without Cast, players simply share the /receiver URL to display on any TV.
+  -->
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box; margin: 0; padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --red:  #ee3333;
+      --blue: #3355ee;
+      --bg:   #0f0f23;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: #fff;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Join screen ─────────────────────────────────────────── */
+    #join-screen {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 20px;
+      gap: 16px;
+      text-align: center;
+    }
+
+    #join-screen .logo { font-size: 3.2rem; }
+    #join-screen h1    { font-size: 1.9rem; font-weight: 800; }
+    #join-screen p     { color: #999; font-size: .95rem; }
+
+    #name-input {
+      width: 220px;
+      padding: 12px 16px;
+      font-size: 1rem;
+      border: 2px solid rgba(255,255,255,.15);
+      border-radius: 10px;
+      background: rgba(255,255,255,.07);
+      color: #fff;
+      outline: none;
+      text-align: center;
+    }
+    #name-input:focus { border-color: rgba(255,255,255,.4); }
+    #name-input::placeholder { color: #666; }
+
+    .team-row { display: flex; gap: 12px; }
+    .team-btn {
+      width: 100px; height: 54px;
+      border: 3px solid transparent;
+      border-radius: 12px;
+      font-size: 1rem; font-weight: 700;
+      color: #fff; cursor: pointer;
+      transition: transform .1s, border-color .1s;
+    }
+    .team-btn:active { transform: scale(.95); }
+    .team-btn.red  { background: var(--red); }
+    .team-btn.blue { background: var(--blue); }
+    .team-btn.active { border-color: #fff; }
+
+    #join-btn {
+      margin-top: 6px;
+      width: 200px; padding: 14px;
+      font-size: 1.1rem; font-weight: 700;
+      border: none; border-radius: 12px;
+      background: #1a7a40; color: #fff;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    #join-btn:hover  { background: #219150; }
+    #join-btn:active { transform: scale(.97); }
+
+    #join-error {
+      font-size: .88rem; color: #f66;
+      min-height: 1.2em;
+    }
+
+    /* ── Game screen ─────────────────────────────────────────── */
+    #game-screen {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    /* Status / score bar */
+    #top-bar {
+      padding: 10px 16px;
+      background: rgba(255,255,255,.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: .85rem;
+    }
+    #player-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    #score-label { font-weight: 700; font-size: 1rem; }
+
+    /* Instruction strip */
+    #tip {
+      text-align: center;
+      font-size: .8rem;
+      color: #777;
+      padding: 6px;
+      background: rgba(0,0,0,.25);
+    }
+
+    /* Goal announcement */
+    #goal-flash {
+      display: none;
+      text-align: center;
+      padding: 10px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      animation: flashIn .3s ease;
+    }
+    @keyframes flashIn {
+      from { opacity: 0; transform: scale(.85); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    /* Joystick area — takes all remaining space */
+    #joystick-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    #joystick-wrap {
+      width: 190px;
+      height: 190px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.08);
+      border: 3px solid rgba(255,255,255,.2);
+      position: relative;
+      touch-action: none;
+    }
+
+    #joystick-thumb {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.55);
+      border: 3px solid rgba(255,255,255,.9);
+      position: absolute;
+      top:  50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      transition: background .1s;
+    }
+
+    #direction-indicator {
+      position: absolute;
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,.35);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      pointer-events: none;
+      transition: transform .1s;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Join Screen ────────────────────────────────────────────── -->
+  <div id="join-screen">
+    <div class="logo">⚽</div>
+    <h1>SoccerCast</h1>
+    <p>Enter your name &amp; pick a team</p>
+
+    <input id="name-input" type="text" placeholder="Your name" maxlength="14" autocomplete="off" spellcheck="false">
+
+    <div class="team-row">
+      <button class="team-btn red active" id="btn-red"  onclick="selectTeam('red')">🔴 Red</button>
+      <button class="team-btn blue"       id="btn-blue" onclick="selectTeam('blue')">🔵 Blue</button>
+    </div>
+
+    <button id="join-btn" onclick="joinGame()">Join Game</button>
+    <div id="join-error"></div>
+  </div>
+
+  <!-- ─── Game Screen ────────────────────────────────────────────── -->
+  <div id="game-screen">
+    <div id="top-bar">
+      <span id="player-badge">Player</span>
+      <span id="score-label">0 – 0</span>
+    </div>
+
+    <div id="goal-flash"></div>
+    <div id="tip">Use the joystick to move · Bump the ball to kick it</div>
+
+    <div id="joystick-area">
+      <div id="joystick-wrap">
+        <div id="joystick-thumb"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // -----------------------------------------------------------------------
+    // Cast App ID — replace with your registered Cast App ID for real
+    // Chromecast support. Leave as-is to skip Cast functionality.
+    // -----------------------------------------------------------------------
+    const CAST_APP_ID = 'YOUR_CAST_APP_ID';
+
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+    let selectedTeam = 'red';
+    let socket       = null;
+    let myId         = null;
+    let joystickReady = false; // guard: only attach joystick listeners once
+
+    // -----------------------------------------------------------------------
+    // Join screen
+    // -----------------------------------------------------------------------
+    function selectTeam(team) {
+      selectedTeam = team;
+      document.getElementById('btn-red').classList.toggle('active',  team === 'red');
+      document.getElementById('btn-blue').classList.toggle('active', team === 'blue');
+    }
+
+    function joinGame() {
+      // Prevent creating a second socket if the user taps Join Game again
+      if (socket && socket.connected) return;
+
+      // Clean up any previous socket that failed to connect
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+
+      const rawName = document.getElementById('name-input').value.trim();
+      const name    = rawName || 'Player';
+      const errEl   = document.getElementById('join-error');
+      errEl.textContent = '';
+
+      const joinBtn = document.getElementById('join-btn');
+      joinBtn.disabled = true;
+
+      socket = io();
+
+      socket.on('connect_error', () => {
+        errEl.textContent = 'Cannot connect to server. Is it running?';
+        socket.disconnect();
+        socket = null;
+        joinBtn.disabled = false;
+      });
+
+      socket.on('connect', () => {
+        socket.emit('join', { name, team: selectedTeam });
+      });
+
+      socket.on('joined', ({ id, name: n, team }) => {
+        myId = id;
+        showGameScreen(n, team);
+      });
+
+      socket.on('goal', ({ scorer, score }) => {
+        const flash    = document.getElementById('goal-flash');
+        const isMine   = (scorer === selectedTeam);
+        flash.textContent = isMine ? '⚽ YOUR TEAM SCORED! 🎉' : '💔 Opponent scored!';
+        flash.style.color = scorer === 'red' ? '#ff6666' : '#6699ff';
+        flash.style.display = 'block';
+        updateScore(score);
+        setTimeout(() => { flash.style.display = 'none'; }, 2800);
+      });
+
+      socket.on('gameState', ({ score }) => {
+        if (score) updateScore(score);
+      });
+
+      socket.on('disconnect', () => {
+        // Return to join screen on disconnect
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('join-screen').style.display = 'flex';
+        document.getElementById('join-btn').disabled = false;
+        errEl.textContent = 'Disconnected from server.';
+      });
+    }
+
+    function showGameScreen(name, team) {
+      document.getElementById('join-screen').style.display = 'none';
+      const gs = document.getElementById('game-screen');
+      gs.style.display = 'flex';
+
+      const badge = document.getElementById('player-badge');
+      badge.textContent = `${name}  ·  ${team.toUpperCase()}`;
+      badge.style.background = team === 'red' ? 'rgba(200,50,50,.5)' : 'rgba(50,80,200,.5)';
+
+      initJoystick();
+    }
+
+    function updateScore({ red, blue }) {
+      document.getElementById('score-label').textContent = `${red} – ${blue}`;
+    }
+
+    // -----------------------------------------------------------------------
+    // Virtual Joystick
+    // -----------------------------------------------------------------------
+    function initJoystick() {
+      // Only attach listeners once across the lifetime of this page load.
+      // The socket and `active` flag are captured in the closure below, so
+      // reconnects continue to work without re-registering event handlers.
+      if (joystickReady) return;
+      joystickReady = true;
+
+      const wrap  = document.getElementById('joystick-wrap');
+      const thumb = document.getElementById('joystick-thumb');
+      const MAX_R = 57; // max thumb travel radius (px)
+
+      let active = false;
+
+      function moveThumb(cx, cy) {
+        const r  = wrap.getBoundingClientRect();
+        const cx0 = r.left + r.width  / 2;
+        const cy0 = r.top  + r.height / 2;
+        let dx = cx - cx0;
+        let dy = cy - cy0;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > MAX_R) { dx = dx / d * MAX_R; dy = dy / d * MAX_R; }
+
+        // Update visual — derive center from element size, not a magic number
+        const visualCenterX = wrap.clientWidth  / 2;
+        const visualCenterY = wrap.clientHeight / 2;
+        thumb.style.left      = (visualCenterX + dx) + 'px';
+        thumb.style.top       = (visualCenterY + dy) + 'px';
+        thumb.style.transform = 'translate(-50%, -50%)';
+
+        // Send input
+        if (socket) {
+          socket.emit('input', {
+            dx: dx / MAX_R,
+            dy: dy / MAX_R,
+          });
+        }
+      }
+
+      function releaseThumb() {
+        active = false;
+        // Spring back to centre
+        thumb.style.left      = '50%';
+        thumb.style.top       = '50%';
+        thumb.style.transform = 'translate(-50%, -50%)';
+        if (socket) socket.emit('input', { dx: 0, dy: 0 });
+      }
+
+      // Touch
+      wrap.addEventListener('touchstart', e => {
+        e.preventDefault();
+        active = true;
+        moveThumb(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: false });
+
+      wrap.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (active) moveThumb(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: false });
+
+      wrap.addEventListener('touchend',   releaseThumb);
+      wrap.addEventListener('touchcancel', releaseThumb);
+
+      // Mouse (for desktop testing) — attached to document only once
+      wrap.addEventListener('mousedown', e => {
+        active = true;
+        moveThumb(e.clientX, e.clientY);
+      });
+      document.addEventListener('mousemove', e => {
+        if (active) moveThumb(e.clientX, e.clientY);
+      });
+      document.addEventListener('mouseup', () => {
+        if (active) releaseThumb();
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Chromecast Sender SDK integration (optional)
+    // Loaded only when CAST_APP_ID is a valid, registered ID.
+    // -----------------------------------------------------------------------
+    window.__onGCastApiAvailable = function(isAvailable) {
+      if (!isAvailable || CAST_APP_ID === 'YOUR_CAST_APP_ID') return;
+      try {
+        cast.framework.CastContext.getInstance().setOptions({
+          receiverApplicationId: CAST_APP_ID,
+          autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+        });
+        // Add cast button to the top bar
+        const castBtn = document.createElement('google-cast-launcher');
+        document.getElementById('top-bar').prepend(castBtn);
+      } catch (e) {
+        console.warn('[Cast] Sender init failed', e);
+      }
+    };
+  </script>
+
+  <!--
+    Uncomment to enable the Cast Sender SDK once you have a registered App ID:
+
+  <script src="https://www.gstatic.com/cast/sdk/libs/cast_framework/current/cast_framework.js"></script>
+  -->
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SoccerCast</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f23;
+      color: #fff;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .logo { font-size: 4rem; margin-bottom: 8px; }
+    h1   { font-size: 2.4rem; font-weight: 800; letter-spacing: -1px; }
+    .sub { color: #888; margin: 8px 0 40px; font-size: 1.1rem; }
+
+    .cards {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    .card {
+      width: 220px;
+      padding: 28px 20px;
+      border-radius: 16px;
+      text-decoration: none;
+      color: #fff;
+      text-align: center;
+      transition: transform .15s, box-shadow .15s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+
+    .card-tv   { background: linear-gradient(135deg, #1a7a40, #0f5c2e); }
+    .card-ctrl { background: linear-gradient(135deg, #1a3a7a, #0f2c5e); }
+
+    .card-icon { font-size: 3rem; }
+    .card-title { font-size: 1.2rem; font-weight: 700; }
+    .card-desc  { font-size: 0.85rem; color: rgba(255,255,255,.75); line-height: 1.4; }
+
+    .steps {
+      max-width: 460px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 14px;
+      padding: 24px 28px;
+      line-height: 1.9;
+      font-size: 0.95rem;
+      color: #ccc;
+    }
+    .steps strong { color: #fff; }
+    .steps h2 { font-size: 1rem; color: #fff; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="logo">⚽</div>
+  <h1>SoccerCast</h1>
+  <p class="sub">Multiplayer Football · Chromecast-ready</p>
+
+  <div class="cards">
+    <a href="/receiver" class="card card-tv">
+      <span class="card-icon">📺</span>
+      <span class="card-title">TV / Receiver</span>
+      <span class="card-desc">Open this on your TV, Chromecast browser, or any big screen.</span>
+    </a>
+    <a href="/controller" class="card card-ctrl">
+      <span class="card-icon">📱</span>
+      <span class="card-title">Controller</span>
+      <span class="card-desc">Open this on your phone to join and play with the virtual joystick.</span>
+    </a>
+  </div>
+
+  <div class="steps">
+    <h2>How to play</h2>
+    1. Open <strong>TV / Receiver</strong> in a browser on your TV or cast a tab<br>
+    2. Each player opens <strong>Controller</strong> on their phone<br>
+    3. Enter a name, pick <span style="color:#ff6666">Red</span> or <span style="color:#6699ff">Blue</span> team &amp; hit Join<br>
+    4. Use the joystick to move — run into the ball to kick it!<br>
+    5. Score in the opponent's goal to win 🏆
+  </div>
+</body>
+</html>
