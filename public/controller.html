@@ -237,6 +237,7 @@
     let selectedTeam = 'red';
     let socket       = null;
     let myId         = null;
+    let joystickReady = false; // guard: only attach joystick listeners once
 
     // -----------------------------------------------------------------------
     // Join screen
@@ -248,10 +249,22 @@
     }
 
     function joinGame() {
+      // Prevent creating a second socket if the user taps Join Game again
+      if (socket && socket.connected) return;
+
+      // Clean up any previous socket that failed to connect
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+
       const rawName = document.getElementById('name-input').value.trim();
       const name    = rawName || 'Player';
       const errEl   = document.getElementById('join-error');
       errEl.textContent = '';
+
+      const joinBtn = document.getElementById('join-btn');
+      joinBtn.disabled = true;
 
       socket = io();
 
@@ -259,6 +272,7 @@
         errEl.textContent = 'Cannot connect to server. Is it running?';
         socket.disconnect();
         socket = null;
+        joinBtn.disabled = false;
       });
 
       socket.on('connect', () => {
@@ -288,6 +302,7 @@
         // Return to join screen on disconnect
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('join-screen').style.display = 'flex';
+        document.getElementById('join-btn').disabled = false;
         errEl.textContent = 'Disconnected from server.';
       });
     }
@@ -312,28 +327,32 @@
     // Virtual Joystick
     // -----------------------------------------------------------------------
     function initJoystick() {
+      // Only attach listeners once across the lifetime of this page load.
+      // The socket and `active` flag are captured in the closure below, so
+      // reconnects continue to work without re-registering event handlers.
+      if (joystickReady) return;
+      joystickReady = true;
+
       const wrap  = document.getElementById('joystick-wrap');
       const thumb = document.getElementById('joystick-thumb');
       const MAX_R = 57; // max thumb travel radius (px)
 
       let active = false;
-      let originX = 0, originY = 0;
-
-      function center() {
-        const r = wrap.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      }
 
       function moveThumb(cx, cy) {
-        const c  = center();
-        let dx = cx - c.x;
-        let dy = cy - c.y;
+        const r  = wrap.getBoundingClientRect();
+        const cx0 = r.left + r.width  / 2;
+        const cy0 = r.top  + r.height / 2;
+        let dx = cx - cx0;
+        let dy = cy - cy0;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > MAX_R) { dx = dx / d * MAX_R; dy = dy / d * MAX_R; }
 
-        // Update visual
-        thumb.style.left      = (95 + dx) + 'px';
-        thumb.style.top       = (95 + dy) + 'px';
+        // Update visual — derive center from element size, not a magic number
+        const visualCenterX = wrap.clientWidth  / 2;
+        const visualCenterY = wrap.clientHeight / 2;
+        thumb.style.left      = (visualCenterX + dx) + 'px';
+        thumb.style.top       = (visualCenterY + dy) + 'px';
         thumb.style.transform = 'translate(-50%, -50%)';
 
         // Send input
@@ -369,7 +388,7 @@
       wrap.addEventListener('touchend',   releaseThumb);
       wrap.addEventListener('touchcancel', releaseThumb);
 
-      // Mouse (for desktop testing)
+      // Mouse (for desktop testing) — attached to document only once
       wrap.addEventListener('mousedown', e => {
         active = true;
         moveThumb(e.clientX, e.clientY);

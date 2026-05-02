@@ -55,6 +55,8 @@ let state = {
 
 let inputs = {}; // socketId -> { dx, dy }  (normalised –1..1)
 
+let goalResetTimer = null;
+
 function resetBallState() {
   return { x: FIELD_W / 2, y: FIELD_H / 2, vx: 0, vy: 0 };
 }
@@ -83,7 +85,7 @@ function resetPositions() {
   state.ball = resetBallState();
 }
 
-function dist2(a, b) {
+function distance(a, b) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
 
@@ -112,7 +114,7 @@ function gameTick() {
     for (let j = i + 1; j < playerList.length; j++) {
       const a = playerList[i];
       const b = playerList[j];
-      const d = dist2(a, b);
+      const d = distance(a, b);
       if (d < PLAYER_R * 2 && d > 0) {
         const angle = Math.atan2(b.y - a.y, b.x - a.x);
         const overlap = (PLAYER_R * 2 - d) / 2;
@@ -131,7 +133,7 @@ function gameTick() {
 
   // --- Player-ball collision (kick/push) ---
   for (const player of playerList) {
-    const d = dist2(player, ball);
+    const d = distance(player, ball);
     const minDist = PLAYER_R + BALL_R;
     if (d < minDist && d > 0) {
       const angle = Math.atan2(ball.y - player.y, ball.x - player.x);
@@ -188,7 +190,10 @@ function gameTick() {
     state.score[scorer]++;
     state.phase = 'goal';
     io.emit('goal', { scorer, score: { ...state.score } });
-    setTimeout(() => {
+    goalResetTimer = setTimeout(() => {
+      goalResetTimer = null;
+      // Only resume if a goal phase is still active (players haven't all left)
+      if (state.phase !== 'goal') return;
       resetPositions();
       state.phase = 'playing';
     }, 3000);
@@ -276,6 +281,11 @@ io.on('connection', socket => {
     delete inputs[socket.id];
 
     if (Object.keys(state.players).length === 0) {
+      // Cancel any pending goal-reset so it doesn't restart a now-empty game
+      if (goalResetTimer !== null) {
+        clearTimeout(goalResetTimer);
+        goalResetTimer = null;
+      }
       state.phase = 'waiting';
       state.ball = resetBallState();
       state.score = { red: 0, blue: 0 };
